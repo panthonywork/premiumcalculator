@@ -7,6 +7,8 @@ internal apps.
 
 from __future__ import annotations
 
+import hmac
+
 import streamlit as st
 
 from flexline.calculator import (
@@ -160,6 +162,62 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+# ── Password gate ───────────────────────────────────────────────────────────
+def _check_password() -> bool:
+    """Return True iff the user has entered the configured password.
+
+    Reads the expected password from `st.secrets["password"]` (set in
+    Streamlit Cloud → Settings → Secrets, or in `.streamlit/secrets.toml`
+    locally). Until the correct password is entered, the rest of the app
+    is hidden via `st.stop()`.
+    """
+    if st.session_state.get("password_correct"):
+        return True
+
+    try:
+        expected = st.secrets["password"]
+    except (KeyError, FileNotFoundError, st.errors.StreamlitSecretNotFoundError):
+        expected = ""
+
+    if not expected:
+        st.error(
+            "Access password is not configured. Add a `password` value in "
+            "Streamlit Cloud → Settings → Secrets (or `.streamlit/secrets.toml` "
+            "locally) and reload."
+        )
+        st.stop()
+
+    def _on_submit():
+        entered = st.session_state.get("password_input", "")
+        if hmac.compare_digest(entered, expected):
+            st.session_state["password_correct"] = True
+            st.session_state.pop("password_input", None)
+        else:
+            st.session_state["password_correct"] = False
+
+    _, mid, _ = st.columns([1, 2, 1])
+    with mid:
+        with st.container(border=True):
+            st.markdown("### 🔒 Restricted Access")
+            st.caption(
+                "This calculator is for internal advisor use. Enter the access "
+                "password to continue."
+            )
+            st.text_input(
+                "Password",
+                type="password",
+                key="password_input",
+                on_change=_on_submit,
+            )
+            if st.session_state.get("password_correct") is False:
+                st.error("Incorrect password — please try again.")
+    return False
+
+
+if not _check_password():
+    st.stop()
 
 
 # ── Session state ───────────────────────────────────────────────────────────
